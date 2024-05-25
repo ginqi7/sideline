@@ -513,6 +513,23 @@ Optional argument TYPE is used for recursive `outer' and `inner'."
     (`inner (sideline--display-starting on-left backend-str (if on-left 'right 'left)))
     (`outer (sideline--display-starting on-left backend-str (if on-left 'left 'right)))))
 
+(defun sideline--split-string-by-margin (str on-left)
+  "Split STR by margin.
+Return a cons:
+the first element is text in buffer retion.
+the second element is text in margin."
+  (if on-left
+      (progn
+	(cons 
+	 (substring str (- (car (window-margins) 2)))
+	 (substring str 0 (- (car (window-margins) 2)))
+	 ))
+      (progn
+	(cons
+	 (substring str 0 (+ 2 (- (length str) (cdr (window-margins)))))
+	 (substring str (+ 2 (- (length str) (cdr (window-margins)))))
+	 ))))
+
 (defun sideline--create-ov (backend candidate action face name on-left order bol eol)
   "Create information (CANDIDATE) overlay.
 
@@ -524,6 +541,9 @@ FACE, NAME, ON-LEFT, and ORDER for details.
 Arguments BOL and EOL are cached for faster performance."
   (when-let*
       ((backend-str (format sideline-display-backend-format name))
+       (margin-split-strs (sideline--split-string-by-margin candidate on-left))
+       (margin-text (cdr margin-split-strs))
+       (candidate (car margin-split-strs))
        (text (if sideline-display-backend-name  ; this is the displayed text
                  (progn
                    (add-face-text-property 0 (length backend-str) 'sideline-backend nil backend-str)
@@ -537,7 +557,9 @@ Arguments BOL and EOL are cached for faster performance."
             (let ((start (if sideline-display-backend-name
                              (sideline--display-starting on-left backend-str)
                            0)))
-              (add-face-text-property start (+ start len-cand) face nil text)))
+              (add-face-text-property start (+ start len-cand) face nil text)
+	      (add-face-text-property 0 (length margin-text) face nil margin-text)
+	      ))
           (when action  ; apply action listener
             (let ((keymap (sideline--create-keymap action candidate)))
               (add-text-properties 0 len-text `(keymap ,keymap mouse-face highlight) text)))
@@ -559,6 +581,8 @@ Arguments BOL and EOL are cached for faster performance."
     (let* ((len-str (length str))
            (empty-ln (= pos-start pos-end))
            (ov (make-overlay pos-start (if empty-ln pos-start (+ pos-start len-str))
+                             nil t t))
+	   (ov1 (make-overlay pos-start (if empty-ln pos-start (+ pos-start len-str))
                              nil t t)))
       (cond (on-left
              (if empty-ln
@@ -566,6 +590,14 @@ Arguments BOL and EOL are cached for faster performance."
                (overlay-put ov 'display str)
                (overlay-put ov 'invisible t)))
             (t (overlay-put ov 'before-string str)))
+      (overlay-put ov1 'before-string 
+		   (propertize "." 'display 
+			       `((margin 
+				  ,(if on-left
+				       'left-margin
+				       'right-margin
+				       )) 
+				 ,margin-text)))
       (overlay-put ov 'window (get-buffer-window))
       (overlay-put ov 'priority (if on-left sideline-priority
                                   ;; Add 1 to render on the same line!
@@ -576,7 +608,9 @@ Arguments BOL and EOL are cached for faster performance."
       (overlay-put ov 'occ-pt occ-pt)
       (unless (gethash backend sideline--overlays)
         (setf (gethash backend sideline--overlays) nil))
-      (push ov (gethash backend sideline--overlays)))))
+      (push ov (gethash backend sideline--overlays))
+      (push ov1 (gethash backend sideline--overlays))
+      )))
 
 ;;
 ;; (@* "Async" )
